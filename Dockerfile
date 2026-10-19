@@ -1,5 +1,5 @@
-# CUDA 12 + cuDNN 9 runtime: what CTranslate2 4.5+ (faster-whisper) needs on GPU.
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+# CUDA 12 + cuDNN 9 (CTranslate2 4.5+); torch >= 2.6 (transformers refuses torch.load below it).
+FROM pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime
 
 ENV HF_HOME=/models \
     PYTHONUNBUFFERED=1 \
