@@ -1,0 +1,8 @@
+runpod>=1.7,<2
+faster-whisper==1.2.1
+av==18.1.0
+ctranslate2==4.8.3
+transformers==4.57.6
+huggingface-hub==0.36.2
+librosa==0.11.0
+soundfile==0.14.0
