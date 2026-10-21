@@ -86,6 +86,7 @@ def phonemise(path):
 
 
 GAP = 0.5        # seconds of silence between clips in the joined audio
+PHONEME_CHUNK = 8
 LONG = 28.0      # batched mode reads at most 30 s per clip; longer ones go one by one
 
 
@@ -187,8 +188,13 @@ def handler_batched(inp, want_phonemes, started):
                              for s in segs for w in (s.words or [])],
                    "duration": float(round(info.duration, 3))}
     if want_phonemes and audios:
-        for i, ph in enumerate(phonemise_batch(audios)):
-            rows[i]["phonemes"] = ph
+        # Small padded chunks: one batch of 48 clips padded to the longest held
+        # enough of torch's cached VRAM that Whisper ran out on the next job.
+        for start in range(0, len(audios), PHONEME_CHUNK):
+            for j, ph in enumerate(phonemise_batch(audios[start:start + PHONEME_CHUNK])):
+                rows[start + j]["phonemes"] = ph
+    if DEVICE == "cuda":
+        torch.cuda.empty_cache()  # hand cached blocks back before CTranslate2's next job
     out += [{"id": keep[i], **rows[i]} for i in range(len(audios))]
     return {"results": out, "seconds": round(time.time() - started, 2), "device": DEVICE,
             "batched": True}
@@ -199,7 +205,16 @@ def handler(job):
     want_phonemes = inp.get("phonemes", True)
     started, out = time.time(), []
     if BATCH_SIZE > 0:
-        return handler_batched(inp, want_phonemes, started)
+        try:
+            return handler_batched(inp, want_phonemes, started)
+        except RuntimeError as exc:
+            # A CUDA failure leaves this process's GPU context unusable (an OOM
+            # here was followed by "invalid device ordinal" on every later job).
+            # Exit so Runpod starts a fresh worker; the client retries the batch.
+            if "CUDA" in str(exc) or "cuda" in str(exc):
+                print(f"fatal CUDA error, exiting: {exc}", flush=True)
+                os._exit(1)
+            raise
     for clip in inp["clips"]:
         handle, path = tempfile.mkstemp()
         os.close(handle)
